@@ -1,0 +1,8 @@
+__pycache__/
+/uploads/*
+/static/output/*
+*.mp4
+*.jpg
+!/uploads/.gitkeep
+!/static/output/.gitkeep
+*.pt
