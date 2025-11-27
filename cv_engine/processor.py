@@ -13,7 +13,7 @@ app = FaceAnalysis(name="buffalo_l")
 app.prepare(ctx_id=0) 
 
 class CVProcessor:
-    def __init__(self, insight_face_interval = 150):
+    def __init__(self, insight_face_interval = 10, yolo_interval = 5):
 
         # TODO: Initialize your models here (YOLO, ONNX Emotion) <---- AI Help
         
@@ -32,7 +32,9 @@ class CVProcessor:
         self.frame_idx = 0
         self.max_number_people = 0
         self.cached_results_face = []
+        self.cached_results_yolo = []
         self.INSIGHT_FACE_INTERVAL = insight_face_interval
+        self.YOLO_INTERVAL = yolo_interval
 
         # This runs once when the server starts, so we don't reload models every request. <---- AI Help
         pass
@@ -130,7 +132,11 @@ class CVProcessor:
         elif type_file == "video":
 
             cap = cv2.VideoCapture(file_path)
-            
+            frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            output_video = cv2.VideoWriter("output.mp4", fourcc, fps, (frame_width, frame_height)) 
             if not cap.isOpened():
                 print("The video not run")
 
@@ -138,6 +144,7 @@ class CVProcessor:
                                 
             for frame_result in results_yolo:
                 self.frame_idx +=1
+                image = frame_result.orig_img.copy()
                 boxes = frame_result.boxes
                 new_results_face = []
                 for detection in boxes:
@@ -158,42 +165,61 @@ class CVProcessor:
                     person = image[y1:y2, x1:x2]
 
 
-                    if self.frame_idx % self.INSIGHT_FACE_INTERVAL == 0 or self.frame_idx == 5:
+                    if self.frame_idx % self.INSIGHT_FACE_INTERVAL == 0:
                         
                         face = self.app_insightface.get(person)
 
-                        # Bounding box of face
-                        fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
 
-                        gender = "male" if face[0].gender == 1 else "female"
-                        age = face[0].age
-                        #Analyze only the face
-                        emotion = self.analyze_emotion(person[fy1:fy2, fx1:fx2])
+                        if len(face) != 0:                    
+                            fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
+
+                            h, w = person.shape[:2]
+
+                            # Clip negative and out-of-range coordinates
+                            fx1 = max(0, min(fx1, w - 1))
+                            fy1 = max(0, min(fy1, h - 1))
+                            fx2 = max(0, min(fx2, w - 1))
+                            fy2 = max(0, min(fy2, h - 1))
+                            
+                            # After clipping, ensure valid ordering
+                            if fx2 <= fx1 or fy2 <= fy1:
+                                print("Invalid face bbox after clipping:", fx1, fy1, fx2, fy2)
+                                continue  # skip this face
+
+                            gender = "male" if face[0].gender == 1 else "female"
+                            age = face[0].age
+
+                            #Analyze only the face
+                            face_crop = person[fy1:fy2, fx1:fx2]
+                            if face_crop.size == 0:
+                                print("Empty crop: ", fx1, fy1, fx2, fy2, person.shape)
+                                continue
+
+                            emotion = self.analyze_emotion(face_crop)
 
 
-                        # Face relative to entire image
-                        face_x1 = x1 + fx1
-                        face_y1 = y1 + fy1
-                        face_x2 = x1 + fx1 + fx2
-                        face_y2 = y1 + fy1 + fy2
+                            # Face relative to entire image
+                            face_x1 = x1 + fx1
+                            face_y1 = y1 + fy1
+                            face_x2 = x1 + fx2
+                            face_y2 = y1 + fy2
 
-                        text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion};"
-                        
-                        # Draw bounding box face
-                        cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
+                            text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion};"
+                            
+                            # Draw bounding box face
+                            cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
 
-                        new_results_face.append({"id_people": track_id, "conf": conf, "gender": gender, "age": age, "emotion": emotion,
-                                                  "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2})
-                        
-                        # Cache the result 
-                        self.cached_results_face = new_results_face
-                                        # Draw text with details
+                            new_results_face.append({"id_people": track_id, "conf": conf, "gender": gender, "age": age, "emotion": emotion,
+                                                    "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2})
+                            
+                            # Cache the result 
+                            self.cached_results_face = new_results_face
                     
                     # Draw bounding box person
                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
 
-                if self.frame_idx % self.DEEP_FACE_INTERVAL != 0 and self.frame_idx != 5:
+                if self.frame_idx % self.INSIGHT_FACE_INTERVAL != 0:
                     for face in self.cached_results_face:
                         gender = face["gender"]
                         emotion = face["emotion"]
@@ -209,11 +235,11 @@ class CVProcessor:
                         # Draw bounding box face
                         cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
                 
-                cv2.putText(image, text_person, (x1 - 10, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 2)
+                cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-
+                output_video.write(image)
             #Run video
-            print()
+            return output_video
         else:
             print("Error")
         

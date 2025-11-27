@@ -4,6 +4,8 @@ python-multipart
 jinja2
 opencv-python
 ultralytics
-deepface
-tf-keras
 numpy
+python-magic-bin
+insightface
+onnxruntime
+openvino
