@@ -3,22 +3,28 @@ import cv2
 import numpy as np
 import os
 import magic
-from deepface import DeepFace
+from openvino.runtime import Core
+from insightface.app import FaceAnalysis
 import matplotlib.pyplot as plt
+from ultralytics import YOLO
 
+model_openvino = Core().read_model("cv_engine\models\emotion\FP16\emotions-recognition-retail-0003.xml")
+app = FaceAnalysis(name="buffalo_l")
+app.prepare(ctx_id=0) 
 
 class CVProcessor:
-    def __init__(self, yolo_interval = 5, deep_face_interval = 150):
+    def __init__(self, insight_face_interval = 150):
 
-        # TODO: Initialize your models here (YOLO, DeepFace) <---- AI Help
+        # TODO: Initialize your models here (YOLO, ONNX Emotion) <---- AI Help
         
         try:
-            from ultralytics import YOLO
-            import torch
             self.yolo_model = YOLO("yolov8n.pt")
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            self.yolo_model.to(self.device)
-            print(f"YOLOv8n run and using: {self.device}")
+            self.compiled = Core().compile_model(model_openvino, "CPU")
+            self.input_layer = self.compiled.input(0)
+            self.output_layer = self.compiled.output(0)
+            self.app_insightface = app
+
+            print(f"YOLOv8n run")
         except Exception as e:
             print("Error the YOLOv8 failed to load", e)
             self.yolo_model = None
@@ -26,7 +32,7 @@ class CVProcessor:
         self.frame_idx = 0
         self.max_number_people = 0
         self.cached_results_face = []
-        self.DEEP_FACE_INTERVAL = deep_face_interval
+        self.INSIGHT_FACE_INTERVAL = insight_face_interval
 
         # This runs once when the server starts, so we don't reload models every request. <---- AI Help
         pass
@@ -91,26 +97,24 @@ class CVProcessor:
                     
                     # Crop the person image for emotion analyze
                     person = image[y1:y2, x1:x2]
+                    face = self.app_insightface.get(person)
 
-                    results_deep_face = DeepFace.analyze(person, actions=options, enforce_detection=False, detector_backend="retinaface")
+                    # Bounding box of face
+                    fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
 
-                    gender = results_deep_face[0]["dominant_gender"]
-                    emotion = results_deep_face[0]["dominant_emotion"]
-                    age = results_deep_face[0]["age"]
-                    ethnicity = results_deep_face[0]["dominant_race"]
+                    gender = "male" if face[0].gender == 1 else "female"
+                    age = face[0].age
+                    #Analyze only the face
+                    emotion = self.analyze_emotion(person[fy1:fy2, fx1:fx2])
 
-                    # DeepFace relative face box
-                    fx1 = results_deep_face[0]["region"]["x"]
-                    fy1 = results_deep_face[0]["region"]["y"]
-                    fw = results_deep_face[0]["region"]["w"]
-                    fh = results_deep_face[0]["region"]["h"]
 
+                    # Face relative to entire image
                     face_x1 = x1 + fx1
                     face_y1 = y1 + fy1
-                    face_x2 = x1 + fx1 + fw
-                    face_y2 = y1 + fy1 + fh
+                    face_x2 = x1 + fx2
+                    face_y2 = y1 + fy2
 
-                    text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; \n A: {age}; E: {emotion}; Et: {ethnicity}"
+                    text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion};"
                         
                     # Draw bounding box face
                     cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
@@ -119,7 +123,7 @@ class CVProcessor:
                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
                     # Put text for each person
-                    cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 2)
+                    cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
             return (image, self.max_number_people)
 
@@ -154,32 +158,32 @@ class CVProcessor:
                     person = image[y1:y2, x1:x2]
 
 
-                    if self.frame_idx % self.DEEP_FACE_INTERVAL == 0 or self.frame_idx == 5:
+                    if self.frame_idx % self.INSIGHT_FACE_INTERVAL == 0 or self.frame_idx == 5:
                         
-                        results_deep_face = DeepFace.analyze(person, actions=options, enforce_detection=False, detector_backend="retinaface")
-                        gender = results_deep_face[0]["dominant_gender"]
-                        emotion = results_deep_face[0]["dominant_emotion"]
-                        age = results_deep_face[0]["age"]
-                        ethnicity = results_deep_face[0]["dominant_race"]
+                        face = self.app_insightface.get(person)
 
-                        # DeepFace relative face box
-                        fx1 = results_deep_face[0]["region"]["x"]
-                        fy1 = results_deep_face[0]["region"]["y"]
-                        fw = results_deep_face[0]["region"]["w"]
-                        fh = results_deep_face[0]["region"]["h"]
+                        # Bounding box of face
+                        fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
 
+                        gender = "male" if face[0].gender == 1 else "female"
+                        age = face[0].age
+                        #Analyze only the face
+                        emotion = self.analyze_emotion(person[fy1:fy2, fx1:fx2])
+
+
+                        # Face relative to entire image
                         face_x1 = x1 + fx1
                         face_y1 = y1 + fy1
-                        face_x2 = x1 + fx1 + fw
-                        face_y2 = y1 + fy1 + fh
+                        face_x2 = x1 + fx1 + fx2
+                        face_y2 = y1 + fy1 + fy2
 
-                        text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion}; Et: {ethnicity}"
+                        text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion};"
                         
                         # Draw bounding box face
                         cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
 
                         new_results_face.append({"id_people": track_id, "conf": conf, "gender": gender, "age": age, "emotion": emotion,
-                                                            "ethnicity": ethnicity, "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2})
+                                                  "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2})
                         
                         # Cache the result 
                         self.cached_results_face = new_results_face
@@ -194,14 +198,13 @@ class CVProcessor:
                         gender = face["gender"]
                         emotion = face["emotion"]
                         age = face["age"]
-                        ethnicity = face["ethnicity"]
 
                         face_x1 = face["face_x1"]
                         face_y1 = face["face_y1"]
                         face_x2 = face["face_x2"]
                         face_y2 = face["face_y2"]
 
-                        text_person = f"P: {face['id_people']}; Conf: {face['conf']:.2f}; G: {gender}; A: {age}; E: {emotion}; Et: {ethnicity}"
+                        text_person = f"P: {face['id_people']}; Conf: {face['conf']:.2f}; G: {gender}; A: {age}; E: {emotion};"
                         
                         # Draw bounding box face
                         cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
@@ -226,4 +229,13 @@ class CVProcessor:
         #     }
         # }
     
+    # AI Helps 
+    def analyze_emotion(self, face_crop):
+        face_img = cv2.resize(face_crop, (64,64))
+        face_img = face_img.transpose(2,0,1)[None, ...].astype(np.float32)
 
+        result = self.compiled({self.input_layer.any_name: face_img})[self.output_layer]
+        emotion_id = int(np.argmax(result))
+
+        label = ["neutral", "happy", "sad", "surprise", "anger"]
+        return label[emotion_id]
