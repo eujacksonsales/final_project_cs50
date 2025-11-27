@@ -1,5 +1,5 @@
 # cv_engine/processor.py
-import cv2
+import cv2, time
 import numpy as np
 import os
 import magic
@@ -140,8 +140,259 @@ class CVProcessor:
             if not cap.isOpened():
                 print("The video not run")
 
-            results_yolo = self.yolo_model.track(source=file_path, classes=[0] , tracker="bytetrack.yaml", conf=0.5, stream=True, persist=True)
+            # results_yolo = self.yolo_model.track(source=file_path, classes=[0] , tracker="bytetrack.yaml", conf=0.5, stream=True, persist=True)
+            start_time = time.time()                   
+            while cap.isOpened():
+                
+                ret, frame = cap.read()
+
+                if ret:
+                    self.frame_idx +=1                
+                    
+                    if self.frame_idx % self.YOLO_INTERVAL == 0:
+                        
+                        results = self.yolo_model.track(source=frame, classes=[0] , tracker="bytetrack.yaml", conf=0.5, stream=True, persist=True)
+                        new_results_yolo = []
+                        for result in results:
+                            if result.boxes and result.boxes.is_track:
                                 
+                                # All persons boxes
+                                boxes = result.boxes 
+
+                                new_results_face = []
+                                for detection in boxes:
+
+                                    # Get area of person
+                                    x1, y1, x2, y2 = map(int, detection.xyxy.cpu().numpy()[0])
+                                    #Extract confidence
+                                    conf = detection.conf.cpu().item()
+
+                                    #Track id
+                                    track_id = int(detection.id.cpu().item()) if detection.id is not None else -1
+                                    
+                                    # Get the max number of people in the video
+                                    if self.max_number_people < track_id:
+                                        self.max_number_people = track_id
+                                    
+                                    # Crop the person image for emotion analyze
+                                    person = frame[y1:y2, x1:x2]
+
+
+                                    if self.frame_idx % self.INSIGHT_FACE_INTERVAL == 0:
+                                        
+                                        face = self.app_insightface.get(person)
+
+
+                                        if len(face) != 0:                    
+                                            fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
+
+                                            # <--- AI HELP to fix the negative numbers out the image person crop --->
+                                            h, w = person.shape[:2]
+
+                                            # Clip negative and out-of-range coordinates
+                                            fx1 = max(0, min(fx1, w - 1))
+                                            fy1 = max(0, min(fy1, h - 1))
+                                            fx2 = max(0, min(fx2, w - 1))
+                                            fy2 = max(0, min(fy2, h - 1))
+                                            
+                                            # After clipping, ensure valid ordering
+                                            if fx2 <= fx1 or fy2 <= fy1:
+                                                print("Invalid face bbox after clipping:", fx1, fy1, fx2, fy2)
+                                                continue  # skip this face
+
+                                            #Analyze only the face
+                                            face_crop = person[fy1:fy2, fx1:fx2]
+                                            if face_crop.size == 0:
+                                                print("Empty crop: ", fx1, fy1, fx2, fy2, person.shape)
+                                                continue
+
+                                            # <------------------------------------------>
+                                            
+                                            gender = "male" if face[0].gender == 1 else "female"
+                                            age = face[0].age
+                                            emotion = self.analyze_emotion(face_crop)
+
+
+                                            # Face relative to entire image
+                                            face_x1 = x1 + fx1
+                                            face_y1 = y1 + fy1
+                                            face_x2 = x1 + fx2
+                                            face_y2 = y1 + fy2
+
+                                            text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion};"
+                                            
+                                            # Draw bounding box face
+                                            cv2.rectangle(frame, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
+
+                                            new_results_face.append({"id_people": track_id, "conf": conf, "gender": gender, "age": age, "emotion": emotion,
+                                                                    "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2,  "x1": x1, "y1": y1})
+                                            
+                                            # Cache the result 
+                                            self.cached_results_face = new_results_face
+
+                                            # Put text details in face of people
+                                            cv2.putText(frame, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 2)
+                                    
+                                    # Draw bounding box person
+                                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                    new_results_yolo.append({"x1": x1, "x2": x2, "y1": y1, "y2": y2})
+                                    self.cached_results_yolo = new_results_yolo
+
+                    else:
+                        for person in self.cached_results_yolo:
+                            x1 = person["x1"]
+                            y1 = person["y1"]
+                            x2 = person["x2"]
+                            y2 = person["y2"]
+
+                            # Draw bounding box person
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                    if self.frame_idx % self.INSIGHT_FACE_INTERVAL != 0:
+                        for face in self.cached_results_face:
+                            x1 = face["x1"]; y1 = face["y1"]
+                            gender = face["gender"]
+                            emotion = face["emotion"]
+                            age = face["age"]
+
+                            face_x1 = face["face_x1"]
+                            face_y1 = face["face_y1"]
+                            face_x2 = face["face_x2"]
+                            face_y2 = face["face_y2"]
+
+                            text_person = f"P: {face['id_people']}; Conf: {face['conf']:.2f}; G: {gender}; A: {age}; E: {emotion};"
+                            
+                            # Draw bounding box face
+                            cv2.rectangle(frame, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
+                            # Put text details in face of people
+                            cv2.putText(frame, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 2)
+
+
+
+                    output_video.write(frame)
+                else:
+                    break
+            end_time = time.time()
+            print(f"Time with yolo interval: {end_time - start_time}")
+            cap.release()
+        else:
+            print("Error")
+        
+
+
+        # MOCK RETURN (For testing the web part before the CV part is ready)
+        # return {
+        #     "processed_file": "output/placeholder.jpg", # This will be relative to /static
+        #     "stats": {
+        #         "people_count": 0,
+        #         "gender_summary": "Not implemented",
+        #         "detected_emotions": []
+        #     }
+        # }
+    
+    # AI Helps 
+    def analyze_emotion(self, face_crop):
+        face_img = cv2.resize(face_crop, (64,64))
+        face_img = face_img.transpose(2,0,1)[None, ...].astype(np.float32)
+
+        result = self.compiled({self.input_layer.any_name: face_img})[self.output_layer]
+        emotion_id = int(np.argmax(result))
+
+        label = ["neutral", "happy", "sad", "surprise", "anger"]
+        return label[emotion_id]
+    
+    def process_media2(self, file_path: str, options: tuple = ('age', 'gender', 'emotion', 'race')):
+        """
+        Args:
+            file_path: Path to the uploaded image/video.
+            options: Dictionary of booleans (e.g., {'count_people': True, 'emotion_joy': False})
+        
+        Returns:
+            Dictionary containing the path to the processed file and the text summary.
+        """
+
+        # TODO: 
+        # 1. Load the image/video using OpenCV
+        # 2. Run YOLO (every 5 frames if video)
+        # 3. Run DeepFace based on 'options'
+        # 4. Draw bounding boxes
+        # 5. Save the new file to 'static/output/'
+
+        print(f"Processing {file_path} with options: {options}")
+
+        text_person = ""
+        # If the file is image 
+        type_file = self.get_file_type(file_path)
+
+        if type_file == "image":
+            #Run image
+            image = cv2.imread(file_path)
+            #Run YOLO
+            results_yolo = self.yolo_model.track(source=image, classes=[0] , tracker="bytetrack.yaml", conf=0.5)
+                                
+            for result in results_yolo:
+                boxes = result.boxes
+                new_results_face = []
+                for detection in boxes:
+
+                    # Get area of person
+                    x1, y1, x2, y2 = map(int, detection.xyxy.cpu().numpy()[0])
+                    #Extract confidence
+                    conf = detection.conf.cpu().item()
+
+                    #Track id
+                    track_id = int(detection.id.cpu().item()) if detection.id is not None else -1
+                    
+                    # Get the max number of people in the video
+                    if self.max_number_people < track_id:
+                        self.max_number_people = track_id
+                    
+                    # Crop the person image for emotion analyze
+                    person = image[y1:y2, x1:x2]
+                    face = self.app_insightface.get(person)
+
+                    # Bounding box of face
+                    fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
+
+                    gender = "male" if face[0].gender == 1 else "female"
+                    age = face[0].age
+                    #Analyze only the face
+                    emotion = self.analyze_emotion(person[fy1:fy2, fx1:fx2])
+
+
+                    # Face relative to entire image
+                    face_x1 = x1 + fx1
+                    face_y1 = y1 + fy1
+                    face_x2 = x1 + fx2
+                    face_y2 = y1 + fy2
+
+                    text_person = f"P: {track_id}; Conf: {conf:.2f}; G: {gender}; A: {age}; E: {emotion};"
+                        
+                    # Draw bounding box face
+                    cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
+
+                    # Draw bounding box person
+                    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                    # Put text for each person
+                    cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+            return (image, self.max_number_people)
+
+        elif type_file == "video":
+
+            cap = cv2.VideoCapture(file_path)
+            frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            output_video = cv2.VideoWriter("output_without_interval.mp4", fourcc, fps, (frame_width, frame_height)) 
+            if not cap.isOpened():
+                print("The video not run")
+
+            start_time = time.time()
+            results_yolo = self.yolo_model.track(source=file_path, classes=[0] , tracker="bytetrack.yaml", conf=0.5, stream=True, persist=True)
+                    
             for frame_result in results_yolo:
                 self.frame_idx +=1
                 image = frame_result.orig_img.copy()
@@ -210,10 +461,11 @@ class CVProcessor:
                             cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
 
                             new_results_face.append({"id_people": track_id, "conf": conf, "gender": gender, "age": age, "emotion": emotion,
-                                                    "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2})
+                                                    "face_x1" : face_x1,"face_y1": face_y1, "face_x2": face_x2, "face_y2": face_y2, "x1": x1, "y1": y1})
                             
                             # Cache the result 
                             self.cached_results_face = new_results_face
+                            cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 2)
                     
                     # Draw bounding box person
                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -221,6 +473,7 @@ class CVProcessor:
 
                 if self.frame_idx % self.INSIGHT_FACE_INTERVAL != 0:
                     for face in self.cached_results_face:
+                        x1 = face["x1"]; y1 = face["y1"]
                         gender = face["gender"]
                         emotion = face["emotion"]
                         age = face["age"]
@@ -234,34 +487,13 @@ class CVProcessor:
                         
                         # Draw bounding box face
                         cv2.rectangle(image, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
+                        cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 2)
                 
-                cv2.putText(image, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                
 
                 output_video.write(image)
             #Run video
-            return output_video
+            end_time = time.time()
+            print(f"Time without yolo interval: {end_time - start_time}")
         else:
             print("Error")
-        
-
-
-        # MOCK RETURN (For testing the web part before the CV part is ready)
-        # return {
-        #     "processed_file": "output/placeholder.jpg", # This will be relative to /static
-        #     "stats": {
-        #         "people_count": 0,
-        #         "gender_summary": "Not implemented",
-        #         "detected_emotions": []
-        #     }
-        # }
-    
-    # AI Helps 
-    def analyze_emotion(self, face_crop):
-        face_img = cv2.resize(face_crop, (64,64))
-        face_img = face_img.transpose(2,0,1)[None, ...].astype(np.float32)
-
-        result = self.compiled({self.input_layer.any_name: face_img})[self.output_layer]
-        emotion_id = int(np.argmax(result))
-
-        label = ["neutral", "happy", "sad", "surprise", "anger"]
-        return label[emotion_id]

@@ -12,23 +12,24 @@ cv_brain = CVProcessor()
 # plt.imshow(image[:,:,::-1])
 # plt.show()
 
-video = cv_brain.process_media("./video_test.mp4")
+video_yolo_interval = cv_brain.process_media("./video_test.mp4")
+video_yolo_without_interval = cv_brain.process_media2("./video_test.mp4")
 
-cap = cv2.VideoCapture(video)
+# cap = cv2.VideoCapture("./output")
 
-if not cap.isOpened():
-    print("Error: Could not open video")
+# if not cap.isOpened():
+#     print("Error: Could not open video")
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("End of video or error occurred")
-        break
+# while True:
+#     ret, frame = cap.read()
+#     if not ret:
+#         print("End of video or error occurred")
+#         break
 
-    cv2.imshow("Frame", frame)
+#     cv2.imshow("Frame", frame)
 
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+#     if cv2.waitKey(1) & 0xFF == ord("q"):
+#         break
 
-cap.release()
-cv2.destroyAllWindows()
+# cap.release()
+# cv2.destroyAllWindows()
