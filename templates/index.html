@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CS50 Final Project: CV Identifier</title>
+    <title>Deep Metrics</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="/static/styles.css" rel="stylesheet">
 </head>
@@ -12,15 +12,16 @@
 <div class="container py-5">
     
     <div class="text-center mb-5">
-        <h1>System Identify Person, Gender, Age and Emotion</h1>
+        <h1>Deep Metrics</h1>
+        <h4>Advanced Demographic & Emotion Analytics</h4>
         <p class="text-muted">CS50x Final Project | Computer Vision Engineer Portfolio</p>
     </div>
 
     <form action="/analyze" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm">
         
         <div class="mb-4">
-            <label for="fileUpload" class="form-label h5">Upload your image, video or using the camera:</label>
-            <input class="form-control form-control-lg" type="file" id="fileUpload" name="file" accept="image/*,video/*">
+            <label for="fileUpload" class="form-label h5">Upload your image, video or using the camera*:</label>
+            <input class="form-control form-control-lg" type="file" id="fileUpload" name="file" accept="image/*,video/*" required>
         </div>
 
         <div class="mb-4">
@@ -106,7 +107,7 @@
                             <source src="{{ result.processed_file }}" type="video/mp4">
                         </video>
                     </div>
-                    <a href="{{ result.processed_file }}" class="btn btn-success btn-sm rounded-pill" download>
+                    <a href="{{ result.download_file }}" class="btn btn-success btn-sm rounded-pill" download>
                         Download the video
                     </a>    
                     {% endif%}
@@ -120,8 +121,7 @@
         <ul class="list-group list-group-flush">
             <li class="list-group-item"><strong>Total of people: {{ result["stats"]["people_count"]}} and {{ "%.2f"|format(result["stats"]["time_run_inference"])}} seconds to run all inferences</strong></li>
             {% for key, value in result.stats.persons.items() %}
-                <li class="list-group-item"><strong>People {{ key }}:</strong> Confidence = {{ "%.2f"|format(value["confidence"]) }}, {% if options["gender"] %}Gender = {{ value["gender"] }}{% endif %}, 
-                {% if options["age"] %}Age = {{ value["age"]}}{% endif %}, {% if true in options["emotions"].values() %}Emotion(s) = {{ value["emotions"]}}{% endif%}
+                <li class="list-group-item"><strong>People {{ key }}:</strong> Confidence = {{ "%.2f"|format(value["confidence"]) }}{% if options["gender"] %}, Gender = {{ value["gender"] }}{% endif %}{% if options["age"] %}, Age = {{ value["age"]}}{% endif %}{% if true in options["emotions"].values() %}, Emotion(s) = {{ value["emotions"] | join(", ")}}{% endif%}
                 </li>
             {% endfor %}
             <!-- AI Help in Jinja code emotion -->

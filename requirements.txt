@@ -7,5 +7,5 @@ ultralytics
 numpy
 python-magic-bin
 insightface
-onnxruntime
+onnxruntime-gpu
 openvino
