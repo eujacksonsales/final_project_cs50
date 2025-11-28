@@ -1,3 +1,4 @@
+#<---- AI Helper ----->
 import shutil
 import os
 from fastapi import FastAPI, Request, File, UploadFile, Form
@@ -13,6 +14,7 @@ app = FastAPI()
 # 1. MOUNT STATIC FILES
 # This allows HTML to access CSS, JS, and the processed images in the 'output' folder
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # 2. SETUP TEMPLATES
 templates = Jinja2Templates(directory="templates")
@@ -35,11 +37,13 @@ async def analyze_media(
     request: Request,
     file: UploadFile = File(...),
     # Checkbox inputs from your wireframe (Form parameters)
-    count_people: bool = Form(False),
-    count_gender: bool = Form(False),
-    count_age: bool = Form(False),
-    emotion_joy: bool = Form(False),
+    add_gender: bool = Form(False),
+    add_age: bool = Form(False),
+    emotion_happy: bool = Form(False),
     emotion_anger: bool = Form(False),
+    emotion_sad: bool = Form(False),
+    emotion_neutral: bool = Form(False),
+    emotion_surprise: bool = Form(False)
     # Add the rest of your emotions here based on your wireframe...
 ):
     """
@@ -56,13 +60,14 @@ async def analyze_media(
 
     # TODO Step 2: Pack the preferences into a dictionary
     options = {
-        "people": count_people,
-        "gender": count_gender,
-        "age": count_age,
+        "gender": add_gender,
+        "age": add_age,
         "emotions": {
-            "joy": emotion_joy,
+            "happy": emotion_happy,
             "anger": emotion_anger,
-            # ...
+            "neutral": emotion_neutral,
+            "sad": emotion_sad,
+            "surprise": emotion_surprise
         }
     }
 
@@ -75,5 +80,6 @@ async def analyze_media(
     return templates.TemplateResponse("index.html", {
         "request": request,
         "result": results, 
-        "original_file": file.filename
+        "original_file": file.filename,
+        "options" : options
     })

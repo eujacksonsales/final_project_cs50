@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS50 Final Project: CV Identifier</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container py-5">
+    
+    <div class="text-center mb-5">
+        <h1>System Identify Person, Gender, Age and Emotion</h1>
+        <p class="text-muted">CS50x Final Project | Computer Vision Engineer Portfolio</p>
+    </div>
+
+    <form action="/analyze" method="post" enctype="multipart/form-data" class="card p-4 shadow-sm">
+        
+        <div class="mb-4">
+            <label for="fileUpload" class="form-label h5">Upload your image, video or using the camera:</label>
+            <input class="form-control form-control-lg" type="file" id="fileUpload" name="file" accept="image/*,video/*">
+        </div>
+
+        <div class="mb-4">
+            <h5 class="mb-3">Select your preferences:</h5>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="add_gender" id="check_gender">
+                        <label class="form-check-label" for="checkGender">Identify Gender</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="add_age" id="check_age">
+                        <label class="form-check-label" for="checkAge">Identify Age</label>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="emotion_happy" id="emo_happy">
+                        <label class="form-check-label" for="emoJoy">Emotion: Happy</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="emotion_anger" id="emo_anger">
+                        <label class="form-check-label" for="emoAnger">Emotion: Anger</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="emotion_neutral" id="emo_neutral">
+                        <label class="form-check-label" for="emoAnger">Emotion: Neutral</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="emotion_sad" id="emo_sad">
+                        <label class="form-check-label" for="emoAnger">Emotion: Sad</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="emotion_surprise" id="emo_surprise">
+                        <label class="form-check-label" for="emoAnger">Emotion: Surprise</label>
+                    </div>
+                    </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 col-6 mx-auto">
+            <button type="submit" class="btn btn-primary btn-lg rounded-pill">GENERATE IDENTIFY</button>
+        </div>
+    </form>
+
+    {% if result %}
+    <hr class="my-5">
+    
+    <div class="row text-center">
+        <h3 class="mb-4">Analysis Results</h3>
+
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">Input</div>
+                <div class="card-body d-flex align-items-center justify-content-center">
+                    {% if result.type == 'image'%}
+                    <img src="./uploads/{{ original_file }}" class="img-fluid rounded" alt="Processed Output">
+                    {% else %}
+                    <div class="ratio ratio-16x9 mb-4">
+                        <video controls>
+                            <source src="./uploads/{{ original_file }}" type="video/mp4">
+                        </video>
+                    </div>
+                    {% endif%}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100 border-primary">
+                <div class="card-header bg-primary text-white">Output</div>
+                <div class="card-body">
+                    {% if result.type == 'image'%}
+                    <img src="{{ result.processed_file }}" class="img-fluid rounded" alt="Processed Output">
+                    <a href="{{ result.processed_file }}" class="btn btn-success btn-sm rounded-pill mt-4" download>
+                        Download the image
+                    </a>                          
+                    {% else %}
+                    <div class="ratio ratio-16x9 mb-4">
+                        <video controls>
+                            <source src="{{ result.processed_file }}" type="video/mp4">
+                        </video>
+                    </div>
+                    <a href="{{ result.processed_file }}" class="btn btn-success btn-sm rounded-pill" download>
+                        Download the video
+                    </a>    
+                    {% endif%}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4 p-4 bg-white border rounded">
+        <h4>Informations Obtained:</h4>
+        <ul class="list-group list-group-flush">
+            <li class="list-group-item"><strong>Total of people: {{ result["stats"]["people_count"]}} and {{ "%.2f"|format(result["stats"]["time_run_inference"])}} seconds to run all inferences</strong></li>
+            {% for key, value in result.stats.persons.items() %}
+                <li class="list-group-item"><strong>People {{ key }}:</strong> Confidence = {{ "%.2f"|format(value["confidence"]) }}, {% if options["gender"] %}Gender = {{ value["gender"] }}{% endif %}, 
+                {% if options["age"] %}Age = {{ value["age"]}}{% endif %}, {% if true in options["emotions"].values() %}Emotion(s) = {{ value["emotions"]}}{% endif%}
+                </li>
+            {% endfor %}
+            <!-- AI Help in Jinja code emotion -->
+        </ul>
+    </div>
+    {% endif %}
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
