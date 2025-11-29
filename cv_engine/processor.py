@@ -117,7 +117,7 @@ class CVProcessor:
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         path_video = os.path.join(BASE_DIR, "static", "output", "output.mp4")
-        output_video = cv2.VideoWriter(path_video, fourcc, fps, (frame_width, frame_height)) 
+        output_video = cv2.VideoWriter("./static/output/output.mp4", fourcc, fps, (frame_width, frame_height)) 
         
         if not cap.isOpened():
             print("The video not run")
@@ -198,7 +198,7 @@ class CVProcessor:
                                                     
                                                     if options["age"]:
                                                         age = face[0].age
-                                                        parts_text.append(f"G:{age}")
+                                                        parts_text.append(f"A:{age}")
                                                     else:
                                                         age = None
 
@@ -274,7 +274,7 @@ class CVProcessor:
                         # Draw bounding box face
                         cv2.rectangle(frame, (face_x1, face_y1), (face_x2, face_y2), (255, 0, 0), 2)
                         # Put text details in face of people
-                        cv2.putText(frame, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                        cv2.putText(frame, text_person, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
                 output_video.write(frame)
 
@@ -332,36 +332,59 @@ class CVProcessor:
                     # Crop the person image for emotion analyze
                     person = image[y1:y2, x1:x2]
                     face = self.app_insightface.get(person)
-
-                    # Bounding box of face
-                    fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
-
-                    if options["gender"]:
-                        gender = "male" if face[0].gender == 1 else "female"
-                        parts_text.append(f"G:{gender}")
-                    else:
-                        gender = None
                     
-                    if options["age"]:
-                        age = face[0].age
-                        parts_text.append(f"G:{age}")
-                    else:
-                        age = None
+                    if len(face) != 0:
+                        fx1, fy1, fx2, fy2 = map(int, face[0].bbox)
 
-                    #Analyze only the face
-                    if any(options["emotions"].values()):
-                        emotion = self.analyze_emotion(person[fy1:fy2, fx1:fx2])
-                    else:
-                        emotion = None
+                        # <--- AI HELP to fix the negative numbers out the image person crop --->
+                        h, w = person.shape[:2]
 
-                    if options["emotions"][emotion]:
-                        parts_text.append(f"G:{emotion}")
+                        # Clip negative and out-of-range coordinates
+                        fx1 = max(0, min(fx1, w - 1))
+                        fy1 = max(0, min(fy1, h - 1))
+                        fx2 = max(0, min(fx2, w - 1))
+                        fy2 = max(0, min(fy2, h - 1))
+                        
+                        # After clipping, ensure valid ordering
+                        if fx2 <= fx1 or fy2 <= fy1:
+                            print("Invalid face bbox after clipping:", fx1, fy1, fx2, fy2)
+                            pass  # skip this face
 
-                    # Face relative to entire image
-                    face_x1 = x1 + fx1
-                    face_y1 = y1 + fy1
-                    face_x2 = x1 + fx2
-                    face_y2 = y1 + fy2
+                        else:
+                            #Analyze only the face
+                            face_crop = person[fy1:fy2, fx1:fx2]
+                            if face_crop.size == 0:
+                                print("Empty crop: ", fx1, fy1, fx2, fy2, person.shape)
+                                pass
+                            # <------------------------------------------>
+                            else:
+
+                                if options["gender"]:
+                                    gender = "male" if face[0].gender == 1 else "female"
+                                    parts_text.append(f"G:{gender}")
+                                else:
+                                    gender = None
+                                
+                                if options["age"]:
+                                    age = face[0].age
+                                    parts_text.append(f"A:{age}")
+                                else:
+                                    age = None
+
+                                #Analyze only the face
+                                if any(options["emotions"].values()):
+                                    emotion = self.analyze_emotion(person[fy1:fy2, fx1:fx2])
+                                else:
+                                    emotion = None
+
+                                if options["emotions"][emotion]:
+                                    parts_text.append(f"G:{emotion}")
+
+                                # Face relative to entire image
+                                face_x1 = x1 + fx1
+                                face_y1 = y1 + fy1
+                                face_x2 = x1 + fx2
+                                face_y2 = y1 + fy2
                     
                     #<---- AI Help ---->
                     text_person = "; ".join(parts_text) + ";"
@@ -386,8 +409,8 @@ class CVProcessor:
                     else:
                         if options["emotions"][emotion]:
                             persons_stats[track_id]["emotions"].append(emotion)
-        path_image = os.path.join(BASE_DIR, "static", "output", "image.jpg")
-        cv2.imwrite(path_image, image)
+
+        cv2.imwrite("./static/output/image.jpg", image)
         total_time = time.time() - start_time
 
         return {

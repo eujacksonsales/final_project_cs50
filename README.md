@@ -1,6 +1,6 @@
 # DeepMetrics: Advanced Demographic & Emotion Analytics
 
-#### Video Demo:
+#### Video Demo: https://youtu.be/Xq_6CIeDhE8
 
 ## Project Overview
 
